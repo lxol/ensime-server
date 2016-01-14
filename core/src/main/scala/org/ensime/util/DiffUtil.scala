@@ -13,7 +13,7 @@ object DiffUtil {
     val originalInfo = originalFile.getAbsolutePath() + "\t" + fileModificationTimeOrEpoch(originalFile)
     val revisedInfo = revisedFile.getAbsolutePath() + "\t" + fileModificationTimeOrEpoch(revisedFile)
     if (diff.getDeltas.isEmpty) ""
-    else difflib.DiffUtils.generateUnifiedDiff(originalInfo, revisedInfo, original.asJava, diff, 1).asScala.mkString("\n")
+    else difflib.DiffUtils.generateUnifiedDiff(originalInfo, revisedInfo, original.asJava, diff, 1).asScala.mkString("", "\n", "\n")
   }
 
   def fileModificationTimeOrEpoch(file: File): String = {

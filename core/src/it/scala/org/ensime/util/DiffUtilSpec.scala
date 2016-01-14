@@ -26,7 +26,8 @@ class DiffUtilSpec extends WordSpec with Matchers {
             | line1
             |-line2
             |+new-line2
-            | line3""".stripMargin
+            | line3
+            |""".stripMargin
 
       val diff = DiffUtil.compareContents(originalContent, revisedContent)
 
