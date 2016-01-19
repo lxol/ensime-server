@@ -9,14 +9,9 @@ import sbtassembly.{ AssemblyKeys, MergeStrategy, PathList }
 import sbtassembly.AssemblyKeys._
 import scala.util.{ Properties, Try }
 import scoverage.ScoverageKeys
+import org.ensime.EnsimePlugin.JdkDir
 
-object EnsimeBuild extends Build with JdkResolver {
-  /*
-   WARNING: When running `server/it:test` be aware that the tests may
-   fail, but sbt will report success. This is a bug in sbt
-   https://github.com/sbt/sbt/issues/1890
-   */
-
+object EnsimeBuild extends Build {
   ////////////////////////////////////////////////
   // common
   override lazy val settings = super.settings ++ Seq(
@@ -148,6 +143,7 @@ object EnsimeBuild extends Build with JdkResolver {
 
   ////////////////////////////////////////////////
   // common dependencies
+  lazy val JavaTools: File = JdkDir / "lib/tools.jar"
   lazy val shapeless = "com.chuusai" %% "shapeless" % "2.2.5"
   lazy val logback = Seq(
     "ch.qos.logback" % "logback-classic" % "1.1.3",
@@ -292,11 +288,7 @@ object EnsimeBuild extends Build with JdkResolver {
         commonItSettings
       ).settings(
         unmanagedJars in Compile += JavaTools,
-        // tools.jar sources are not distributed with the JDK. Get sources
-        // from http://download.java.net/openjdk/jdk6/ extract and zip up
-        // the langtools/src/classes directory, and set the environment
-        // variable referenced here
-        EnsimeKeys.unmanagedSourceArchives := sys.env.get("JDK_LANGTOOLS_SRC").map(file).filter(_.exists()).toSeq,
+        EnsimeKeys.unmanagedSourceArchives += file(".").getCanonicalFile / "openjdk-langtools/openjdk6-langtools-src.zip",
         libraryDependencies ++= Seq(
           "com.h2database" % "h2" % "1.4.190",
           "com.typesafe.slick" %% "slick" % "3.1.1",
@@ -369,26 +361,5 @@ object EnsimeBuild extends Build with JdkResolver {
         } :+ Attributed.blank(JavaTools)
       },
       assemblyJarName in assembly := s"ensime_${scalaBinaryVersion.value}-${version.value}-assembly.jar"
-    )
-}
-
-trait JdkResolver {
-  // WORKAROUND: https://github.com/typelevel/scala/issues/75
-  val JavaTools: File = List(
-    // manual
-    sys.env.get("JDK_HOME"),
-    sys.env.get("JAVA_HOME"),
-    // osx
-    Try("/usr/libexec/java_home".!!).toOption,
-    // fallback
-    sys.props.get("java.home").map(new File(_).getParent),
-    sys.props.get("java.home")
-  ).flatten.map { n =>
-      new File(n.trim + "/lib/tools.jar")
-    }.filter(_.exists()).headOption.getOrElse(
-      throw new FileNotFoundException(
-        """Could not automatically find the JDK/lib/tools.jar.
-        |You must explicitly set JDK_HOME or JAVA_HOME.""".stripMargin
-      )
     )
 }
