@@ -40,10 +40,14 @@ class ClassfileWatcher(
     implicit
     vfs: EnsimeVFS
 ) extends Watcher with SLF4JLogging {
+
   private val impl = if (!config.disableClassMonitoring)
-    Some(new ApachePollingFileWatcherWithWorkaroundImpl(config.root, config.targetClasspath, EnsimeVFS.ClassfileSelector, listeners))
-  else None
-  override def shutdown(): Unit = impl.map(_.shutdown)
+    Some(new ApachePollingFileWatcherWithWorkaroundImpl(config.root, config.targetClasspath,
+      EnsimeVFS.ClassfileAndJarSelector, listeners))
+  else
+    None
+
+  override def shutdown(): Unit = impl.foreach(_.shutdown())
 }
 
 class SourceWatcher(

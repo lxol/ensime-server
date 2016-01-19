@@ -12,6 +12,10 @@ object EnsimeVFS {
     new EnsimeVFS(vfsInst)
   }
 
+  private[indexer] object ClassfileAndJarSelector extends RecursiveExtSelector {
+    val include = Set("class", "jar")
+  }
+
   private[indexer] object ClassfileSelector extends RecursiveExtSelector {
     val include = Set("class")
   }
