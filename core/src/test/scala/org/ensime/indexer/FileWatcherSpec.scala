@@ -13,26 +13,59 @@ abstract class FileWatcherSpec extends AkkaFlatSpec {
 
   def createWatcher(base: File): Watcher
 
-  "FileWatcher" should "detect added / changed / removed files" in withTempDir { d =>
+  "FileWatcher" should "detect added files" in withTempDir { d =>
     val dir = d.canon
     withWatcher(dir) { watcher =>
-      (dir / "foo.class").createWithParents()
-      (dir / "b/bar.jar").createWithParents()
+      val foo = (dir / "foo.class")
+      val bar = (dir / "b/bar.jar")
+
+      foo.createWithParents()
+      bar.createWithParents()
 
       expectMsgType[Added]
       expectMsgType[Added]
+    }
+  }
 
-      (dir / "foo.class").writeString("foo")
-      (dir / "b/bar.jar").writeString("bar")
+  it should "detect added / changed files" in withTempDir { d =>
+    val dir = d.canon
+    withWatcher(dir) { watcher =>
+      val foo = (dir / "foo.class")
+      val bar = (dir / "b/bar.jar")
 
-      expectMsgType[Changed](10.seconds.dilated)
-      expectMsgType[Changed](10.seconds.dilated)
+      foo.createWithParents()
+      bar.createWithParents()
+      expectMsgType[Added]
+      expectMsgType[Added]
 
-      (dir / "foo.class").delete()
-      (dir / "b/bar.jar").delete()
+      Thread.sleep(1000) // FS precision is 1 second
 
-      expectMsgType[Removed](10.seconds.dilated)
-      expectMsgType[Removed](10.seconds.dilated)
+      println(foo.lastModified())
+      foo.writeString("foo")
+      println(foo.lastModified())
+      bar.writeString("bar")
+      expectMsgType[Changed]
+      expectMsgType[Changed]
+    }
+  }
+
+  it should "detect added / deleted files" in withTempDir { d =>
+    val dir = d.canon
+    withWatcher(dir) { watcher =>
+      val foo = (dir / "foo.class")
+      val bar = (dir / "b/bar.jar")
+
+      foo.createWithParents()
+      bar.createWithParents()
+      expectMsgType[Added]
+      expectMsgType[Added]
+
+      Thread.sleep(1000) // FS precision is 1 second
+
+      foo.delete()
+      bar.delete()
+      expectMsgType[Removed]
+      expectMsgType[Removed]
     }
   }
 
