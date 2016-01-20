@@ -42,7 +42,7 @@ class JarTargetTest extends WordSpec with Matchers with Inside
             awaitCond(
               {
                 // should now be able to search the contents of that jar
-                project ! PublicSymbolSearchReq(List("baz", "Foo"), 5)
+                project ! PublicSymbolSearchReq(List("Foo"), 5)
                 val hits = expectMsgType[SymbolSearchResults].syms
                 println(hits)
                 hits.filter {

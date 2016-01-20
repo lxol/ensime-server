@@ -8,6 +8,8 @@ import org.apache.commons.vfs2._
 import org.ensime.api._
 import org.ensime.indexer.DatabaseService._
 import org.ensime.util.file._
+import scala.util.Failure
+import scala.util.Success
 
 //import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent._
@@ -44,6 +46,11 @@ class SearchService(
   // actor based system for all of the persisting instead of this
   // hybrid approach.
 
+  private def scan(f: FileObject) = f.findFiles(EnsimeVFS.ClassfileSelector) match {
+    case null => Nil
+    case res => res.toList
+  }
+
   /**
    * Indexes everything, making best endeavours to avoid scanning what
    * is unnecessary (e.g. we already know that a jar or classfile has
@@ -52,11 +59,6 @@ class SearchService(
    * @return the number of rows (removed, indexed) from the database.
    */
   def refresh(): Future[(Int, Int)] = {
-    def scan(f: FileObject) = f.findFiles(EnsimeVFS.ClassfileSelector) match {
-      case null => Nil
-      case res => res.toList
-    }
-
     // it is much faster during startup to obtain the full list of
     // known files from the DB then and check against the disk, than
     // check each file against DatabaseService.outOfDate
@@ -92,25 +94,9 @@ class SearchService(
     def indexBase(base: FileObject, fileCheck: Option[FileCheck]): Future[Option[Int]] = {
       val outOfDate = fileCheck.map(_.changed).getOrElse(true)
       if (!outOfDate) Future.successful(None)
-      else base match {
-        case classfile if classfile.getName.getExtension == "class" =>
-          // too noisy to log
-          val check = FileCheck(classfile)
-          val symbols = Future {
-            blocking {
-              extractSymbols(classfile, classfile)
-            }
-          }
-          symbols.flatMap(persist(check, _))
-        case jar =>
-          log.debug(s"indexing $jar")
-          val check = FileCheck(jar)
-          val symbols = Future {
-            blocking {
-              scan(vfs.vjar(jar)) flatMap (extractSymbols(jar, _))
-            }
-          }
-          symbols.flatMap(persist(check, _))
+      else {
+        val check = FileCheck(base)
+        extractSymbolsFromClassOrJar(base).flatMap(persist(check, _))
       }
     }
 
@@ -147,8 +133,33 @@ class SearchService(
 
   def persist(check: FileCheck, symbols: List[FqnSymbol]): Future[Option[Int]] = {
     val iwork = Future { blocking { index.persist(check, symbols) } }
+
+    iwork.onComplete {
+      case Success(_) => log.info(s"successfully indexed $check")
+      case Failure(t) => log.error(s"badness indexing $check", t)
+    }
+
     val dwork = db.persist(check, symbols)
     iwork.flatMap { _ => dwork }
+  }
+
+  def extractSymbolsFromClassOrJar(file: FileObject): Future[List[FqnSymbol]] = file match {
+    case classfile if classfile.getName.getExtension == "class" =>
+      // too noisy to log
+      val check = FileCheck(classfile)
+      Future {
+        blocking {
+          extractSymbols(classfile, classfile)
+        }
+      }
+    case jar =>
+      log.debug(s"indexing $jar")
+      val check = FileCheck(jar)
+      Future {
+        blocking {
+          scan(vfs.vjar(jar)) flatMap (extractSymbols(jar, _))
+        }
+      }
   }
 
   private val blacklist = Set("sun/", "sunw/", "com/sun/")
@@ -234,10 +245,12 @@ class SearchService(
     backlogActor ! FileUpdate(f, Nil)
   }
 
-  def fileChanged(f: FileObject): Unit = Future {
-    val symbols = extractSymbols(f, f)
-    backlogActor ! FileUpdate(f, symbols)
-  }(workerEC)
+  // this can be very inefficent because duplicates result in duplicate indexes
+  def fileChanged(f: FileObject): Unit =
+    extractSymbolsFromClassOrJar(f).onComplete {
+      case Success(symbols) => backlogActor ! FileUpdate(f, symbols)
+      case Failure(t) => log.error(s"when processing $f", t)
+    }
 
   def shutdown(): Future[Unit] = {
     db.shutdown()
@@ -272,7 +285,6 @@ class IndexingQueueActor(searchService: SearchService) extends Actor with ActorL
 
   override def receive: Receive = {
     case FileUpdate(fo, syms) =>
-      println(s"got update to $fo")
       todo += ((fo.getName.getURI, (fo, syms)))
       debounce()
 
@@ -282,32 +294,20 @@ class IndexingQueueActor(searchService: SearchService) extends Actor with ActorL
       val (batch, remaining) = todo.splitAt(500)
       todo = remaining
 
-      log.debug(s"Indexing ${batch.size} classfiles")
+      log.debug(s"Indexing ${batch.size} files")
 
-      // blocks the actor thread intentionally -- this is real work
-      // and the underlying I/O implementation is blocking. Give me an
-      // async SQL database and we can talk...
-      //
-      // UPDATE 2015-10-24: Slick no longer blocking. This can most likely be fixed now
-      // (however the author of the above comment imagined)
-
-      {
-        import searchService.workerEC // TODO: check the right EC is used here
-        // batch the deletion (big bottleneck)
-        Await.ready(
-          for {
-            _ <- searchService.delete(batch.values.map(_._1)(collection.breakOut))
-            _ <- Future.sequence(
-              // opportunity to do more batching here
-              batch.collect {
-                case (uri, (file, syms)) if syms.nonEmpty =>
-                  searchService.persist(FileCheck(file), syms)
-              }
-            )
-          } yield (),
-          Duration.Inf
+      import searchService.workerEC
+      for {
+        _ <- searchService.delete(batch.values.map(_._1)(collection.breakOut))
+        _ <- Future.sequence(
+          // opportunity to do more batching here
+          batch.collect {
+            case (uri, (file, syms)) if syms.nonEmpty =>
+              log.info(s"persisting $file with $syms")
+              searchService.persist(FileCheck(file), syms)
+          }
         )
-      }
+      } yield ()
   }
 
 }
