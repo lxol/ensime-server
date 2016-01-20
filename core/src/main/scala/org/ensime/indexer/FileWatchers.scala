@@ -74,9 +74,12 @@ private class ApachePollingFileWatcherImpl(
     implicit
     vfs: EnsimeVFS
 ) extends Watcher with SLF4JLogging {
+  private val bases = watchedDirs.map(vfs.vfile(_).getName.getURI)
 
   private val fm = new DefaultFileMonitor(new FileListener {
-    def watched(event: FileChangeEvent) = selector.includeFile(event.getFile)
+    def watched(event: FileChangeEvent) = {
+      selector.includeFile(event.getFile)
+    }
 
     def fileChanged(event: FileChangeEvent): Unit = {
       if (watched(event)) {
@@ -92,7 +95,11 @@ private class ApachePollingFileWatcherImpl(
         listeners foreach (_.fileAdded(event.getFile))
       }
     def fileDeleted(event: FileChangeEvent): Unit =
-      if (watched(event)) {
+      if (bases(event.getFile.getName.getURI)) {
+        // BASE DELETED!
+        println("BASE DELETED FIXME FIXME FIXME")
+        // manually create the dir?
+      } else if (watched(event)) {
         if (log.isDebugEnabled())
           log.debug(s"${event.getFile} was deleted")
         listeners foreach (_.fileRemoved(event.getFile))
@@ -124,8 +131,7 @@ private class ApachePollingFileWatcherWithWorkaroundImpl(
 
   private val fm = new DefaultFileMonitor(new FileListener {
     def watched(event: FileChangeEvent) = {
-      val name = event.getFile.getName
-      selector.include(name.getExtension)
+      selector.includeFile(event.getFile)
     }
 
     def fileChanged(event: FileChangeEvent): Unit =

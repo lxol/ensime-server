@@ -13,8 +13,11 @@ abstract class FileWatcherSpec extends AkkaFlatSpec {
 
   def createWatcher(base: File): Watcher
 
-  "FileWatcher" should "detect added files" in withTempDir { d =>
-    val dir = d.canon
+  def waitForLinus(): Unit = {
+    Thread.sleep(1000) // FS precision is 1 second
+  }
+
+  "FileWatcher" should "detect added files" in withTempDir { dir =>
     withWatcher(dir) { watcher =>
       val foo = (dir / "foo.class")
       val bar = (dir / "b/bar.jar")
@@ -27,8 +30,7 @@ abstract class FileWatcherSpec extends AkkaFlatSpec {
     }
   }
 
-  it should "detect added / changed files" in withTempDir { d =>
-    val dir = d.canon
+  it should "detect added / changed files" in withTempDir { dir =>
     withWatcher(dir) { watcher =>
       val foo = (dir / "foo.class")
       val bar = (dir / "b/bar.jar")
@@ -38,19 +40,16 @@ abstract class FileWatcherSpec extends AkkaFlatSpec {
       expectMsgType[Added]
       expectMsgType[Added]
 
-      Thread.sleep(1000) // FS precision is 1 second
+      waitForLinus()
 
-      println(foo.lastModified())
       foo.writeString("foo")
-      println(foo.lastModified())
       bar.writeString("bar")
       expectMsgType[Changed]
       expectMsgType[Changed]
     }
   }
 
-  it should "detect added / deleted files" in withTempDir { d =>
-    val dir = d.canon
+  it should "detect added / removed files" in withTempDir { dir =>
     withWatcher(dir) { watcher =>
       val foo = (dir / "foo.class")
       val bar = (dir / "b/bar.jar")
@@ -60,7 +59,7 @@ abstract class FileWatcherSpec extends AkkaFlatSpec {
       expectMsgType[Added]
       expectMsgType[Added]
 
-      Thread.sleep(1000) // FS precision is 1 second
+      waitForLinus()
 
       foo.delete()
       bar.delete()
@@ -69,20 +68,37 @@ abstract class FileWatcherSpec extends AkkaFlatSpec {
     }
   }
 
-  it should "survive deletion of the watched directory" in {
-    fail
+  it should "detect removed base directory" in withTempDir { dir =>
+    withWatcher(dir) { watcher =>
+      waitForLinus()
+
+      dir.delete()
+      expectMsgType[Removed]
+    }
   }
 
-  it should "be able to start up from a non-existent directory" in {
-    fail
+  it should "detect changes to a file base" in withTempDir { dir =>
+    val jar = (dir / "jar.jar")
+    jar.createWithParents()
+
+    withWatcher(jar) { watcher =>
+      waitForLinus()
+
+      jar.writeString("binks")
+      expectMsgType[Changed]
+    }
   }
 
-  it should "detect changes to a file base" in {
-    fail
-  }
+  it should "detect removal of a file base" in withTempDir { dir =>
+    val jar = (dir / "jar.jar")
+    jar.createWithParents()
 
-  it should "survive deletion of a file base" in {
-    fail
+    withWatcher(jar) { watcher =>
+      waitForLinus()
+
+      jar.delete()
+      expectMsgType[Removed]
+    }
   }
 
   it should "be able to start up from a non-existent base file" in {
@@ -119,6 +135,81 @@ abstract class FileWatcherSpec extends AkkaFlatSpec {
     }
   )
 
+}
+
+trait TooMuchForApacheVfs {
+  this: FileWatcherSpec =>
+
+  it should "survive deletion of the watched directory" in {
+    val dir = Files.createTempDir().canon
+    try {
+      withWatcher(dir) { watcher =>
+        val foo = (dir / "foo.class")
+        val bar = (dir / "b/bar.jar")
+
+        foo.createWithParents()
+        bar.createWithParents()
+        expectMsgType[Added]
+        expectMsgType[Added]
+
+        waitForLinus()
+
+        dir.tree.reverse.foreach(_.delete())
+
+        expectMsgType[Removed]
+        expectMsgType[Removed]
+
+        foo.createWithParents()
+        bar.createWithParents()
+        expectMsgType[Added]
+        expectMsgType[Added]
+      }
+    } finally dir.tree.reverse.foreach(_.delete())
+  }
+
+  it should "be able to start up from a non-existent directory" in {
+    val dir = Files.createTempDir().canon
+    dir.delete()
+    try {
+      withWatcher(dir) { watcher =>
+        val foo = (dir / "foo.class")
+        val bar = (dir / "b/bar.jar")
+
+        foo.createWithParents()
+        bar.createWithParents()
+        expectMsgType[Added]
+        expectMsgType[Added]
+
+        waitForLinus()
+
+        dir.tree.reverse.foreach(_.delete())
+
+        expectMsgType[Removed]
+        expectMsgType[Removed]
+
+        foo.createWithParents()
+        bar.createWithParents()
+        expectMsgType[Added]
+        expectMsgType[Added]
+      }
+    } finally dir.tree.reverse.foreach(_.delete())
+  }
+
+  it should "survive removal of a file base" in withTempDir { dir =>
+    val jar = (dir / "jar.jar")
+    jar.createWithParents()
+
+    withWatcher(jar) { watcher =>
+      waitForLinus()
+
+      jar.delete() // best thing for him, frankly
+      expectMsgType[Removed]
+
+      waitForLinus()
+      jar.writeString("binks")
+      expectMsgType[Added]
+    }
+  }
 }
 
 class ApacheFileWatcherSpec extends FileWatcherSpec {
