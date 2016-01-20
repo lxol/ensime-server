@@ -231,4 +231,39 @@ private class ApachePollingFileWatcherWithWorkaroundImpl(
     workaround.stop()
   }
 
+  private class FileWatcherImpl(
+    watchedDirs: Set[File],
+    selector: RecursiveExtSelector,
+    listeners: Seq[FileChangeListener]
+  ) (implicit  vfs: EnsimeVFS)
+      extends Watcher with SLF4JLogging {
+    import org.ensime.filewatcher.FileMonitor
+    private val fm = new FileMonitor
+    fm.setRecursive(true)
+    EnsimeVFS.SourceSelector.include foreach(fm.addSelector(_))
+    listeners foreach( listener =>
+      fm.addListener(new org.ensime.filewatcher.FileListener {
+        def fileAdded(f: File): Unit = {
+          listener.fileAdded(vfs.vfile(f))
+          log.debug(s"${f} was added")
+        }
+        def fileChanged(f: File): Unit = {
+          listener.fileChanged(vfs.vfile(f))
+          log.debug(s"${f} was changed")
+        }
+        def fileRemoved(f: File): Unit = {
+          listener.fileRemoved(vfs.vfile(f))
+          log.debug(s"${f} was removed")
+        }
+        def onOverflow(f: File): Unit = {
+          log.warn("WatchSevice overflow event")
+        }
+      }))
+
+    fm.start()
+    override def shutdown(): Unit = {
+      fm.stop()
+    }
+  }
+
 }
