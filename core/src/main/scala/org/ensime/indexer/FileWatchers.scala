@@ -77,20 +77,30 @@ private class ApachePollingFileWatcherImpl(
 ) extends Watcher with SLF4JLogging {
 
   private val fm = new DefaultFileMonitor(new FileListener {
-    def watched(event: FileChangeEvent) =
-      selector.include(event.getFile.getName.getExtension)
+    def watched(event: FileChangeEvent) = selector.includeFile(event.getFile)
 
-    def fileChanged(event: FileChangeEvent): Unit =
-      if (watched(event))
+    def fileChanged(event: FileChangeEvent): Unit = {
+      log.info(s"EVENT = $event")
+      if (watched(event)) {
+        if (log.isDebugEnabled())
+          log.debug(s"${event.getFile} was changed")
         listeners foreach (_.fileChanged(event.getFile))
+      }
+    }
     def fileCreated(event: FileChangeEvent): Unit =
-      if (watched(event))
+      if (watched(event)) {
+        if (log.isDebugEnabled())
+          log.debug(s"${event.getFile} was created")
         listeners foreach (_.fileAdded(event.getFile))
-
+      }
     def fileDeleted(event: FileChangeEvent): Unit =
-      if (watched(event))
+      if (watched(event)) {
+        if (log.isDebugEnabled())
+          log.debug(s"${event.getFile} was deleted")
         listeners foreach (_.fileRemoved(event.getFile))
+      }
   })
+
   fm.setRecursive(true)
   fm.start()
 
