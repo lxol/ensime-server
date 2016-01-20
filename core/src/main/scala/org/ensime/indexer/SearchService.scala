@@ -258,7 +258,8 @@ class IndexingQueueActor(searchService: SearchService) extends Actor with ActorL
 
   // De-dupes files that have been updated since we were last told to
   // index them. No need to aggregate values: the latest wins.
-  var todo = Map.empty[FileObject, List[FqnSymbol]]
+  // Key is the URI because FileObject doesn't implement equals
+  var todo = Map.empty[String, (FileObject, List[FqnSymbol])]
 
   // debounce and give us a chance to batch (which is *much* faster)
   var worker: Cancellable = _
@@ -271,7 +272,8 @@ class IndexingQueueActor(searchService: SearchService) extends Actor with ActorL
 
   override def receive: Receive = {
     case FileUpdate(fo, syms) =>
-      todo += fo -> syms
+      println(s"got update to $fo")
+      todo += ((fo.getName.getURI, (fo, syms)))
       debounce()
 
     case Process if todo.isEmpty => // nothing to do
@@ -294,11 +296,11 @@ class IndexingQueueActor(searchService: SearchService) extends Actor with ActorL
         // batch the deletion (big bottleneck)
         Await.ready(
           for {
-            _ <- searchService.delete(batch.keys.toList)
+            _ <- searchService.delete(batch.values.map(_._1)(collection.breakOut))
             _ <- Future.sequence(
               // opportunity to do more batching here
               batch.collect {
-                case (file, syms) if syms.nonEmpty =>
+                case (uri, (file, syms)) if syms.nonEmpty =>
                   searchService.persist(FileCheck(file), syms)
               }
             )

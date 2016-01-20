@@ -239,6 +239,12 @@ object EnsimeBuild extends Build {
     libraryDependencies += "org.scalatest" %% "scalatest" % scalatestVersion % "test" intransitive ()
   )
 
+  lazy val testingSimpleJar = Project("testingSimpleJar", file("testing/simpleJar")).settings(
+    ScoverageKeys.coverageExcludedPackages := ".*",
+    exportJars := true,
+    EnsimeKeys.useJar := true
+  )
+
   lazy val testingImplicits = Project("testingImplicits", file("testing/implicits")) settings (
     ScoverageKeys.coverageExcludedPackages := ".*",
     libraryDependencies += "org.scalatest" %% "scalatest" % scalatestVersion % "test" intransitive ()
@@ -277,6 +283,7 @@ object EnsimeBuild extends Build {
     // https://github.com/sbt/sbt/issues/1888
     testingEmpty % "test,it",
     testingSimple % "test,it",
+    testingSimpleJar % "test,it",
     testingTiming % "test,it",
     testingDebug % "test,it",
     testingJava % "test,it"

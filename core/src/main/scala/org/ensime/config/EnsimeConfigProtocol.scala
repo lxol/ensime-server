@@ -50,7 +50,7 @@ object EnsimeConfigProtocol {
    */
   private[config] def validated(m: EnsimeModule): EnsimeModule = {
     (m.targetDirs ++ m.testTargetDirs ++ m.sourceRoots).foreach { dir =>
-      if (!dir.exists()) {
+      if (!dir.exists() && !dir.getName.endsWith(".jar")) {
         log.warn(s"$dir does not exist, creating")
         dir.mkdirs()
       }

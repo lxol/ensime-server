@@ -78,7 +78,7 @@ private class ApachePollingFileWatcherImpl(
 
   private val fm = new DefaultFileMonitor(new FileListener {
     def watched(event: FileChangeEvent) =
-      EnsimeVFS.SourceSelector.include(event.getFile.getName.getExtension)
+      selector.include(event.getFile.getName.getExtension)
 
     def fileChanged(event: FileChangeEvent): Unit =
       if (watched(event))
@@ -163,19 +163,22 @@ private class ApachePollingFileWatcherWithWorkaroundImpl(
       def fileChanged(event: FileChangeEvent): Unit = {
         if (watched(event)) {
           // a fast delete followed by a create looks like a change
-          log.debug(s"${event.getFile} was possibly recreated")
+          if (log.isDebugEnabled())
+            log.debug(s"${event.getFile} was possibly recreated")
           debouncedReset()
         }
       }
       def fileCreated(event: FileChangeEvent): Unit = {
         if (watched(event)) {
-          log.debug(s"${event.getFile} was created")
+          if (log.isDebugEnabled())
+            log.debug(s"${event.getFile} was created")
           debouncedReset()
         }
       }
       def fileDeleted(event: FileChangeEvent): Unit = {
         if (watched(event)) {
-          log.debug(s"${event.getFile} was deleted")
+          if (log.isDebugEnabled())
+            log.debug(s"${event.getFile} was deleted")
           // nothing to do, we need to wait for it to return
         }
       }
@@ -191,7 +194,7 @@ private class ApachePollingFileWatcherWithWorkaroundImpl(
   }
 
   // If directories are recreated, triggering the VFS-536 bug
-  private def reset(forceScan: Boolean): Unit = {
+  private def reset(forceScan: Boolean): Unit = synchronized {
     // When this triggers we tend to see it multiple times because
     // we're watching the various depths within the project.
     log.info("Setting up new file watchers")
@@ -205,14 +208,15 @@ private class ApachePollingFileWatcherWithWorkaroundImpl(
       d <- watchedDirs
       dir = vfs.vfile(d)
       _ = fm.removeFile(dir)
-      _ = Try(d.mkdirs()) // race with sbt
+      _ = { if (!d.getName.endsWith(".jar")) Try(d.mkdirs()) } // race with sbt}
       _ = fm.addFile(dir)
       ancestor <- ancestors(dir)
       if ancestor.getName isAncestor root.getName
       _ = workaround.removeFile(ancestor)
       _ = workaround.addFile(ancestor)
       if forceScan
-      file <- d.tree
+      file <- d.tree :+ d
+      if file.isFile()
       if selector.includeFile(file)
     } {
       // VFS doesn't send "file created" messages when it first starts

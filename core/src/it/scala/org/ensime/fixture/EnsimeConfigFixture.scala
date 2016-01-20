@@ -51,6 +51,10 @@ object EnsimeConfigFixture {
   lazy val SimpleTestProject: EnsimeConfig = EnsimeTestProject.copy(
     subprojects = EnsimeTestProject.subprojects.filter(_.name == "testingSimple")
   )
+  lazy val SimpleJarTestProject: EnsimeConfig = EnsimeTestProject.copy(
+    subprojects = EnsimeTestProject.subprojects.filter(_.name == "testingSimpleJar"),
+    javaLibs = Nil
+  )
   lazy val ImplicitsTestProject: EnsimeConfig = EnsimeTestProject.copy(
     subprojects = EnsimeTestProject.subprojects.filter(_.name == "testingImplicits"),
     javaLibs = Nil
@@ -89,7 +93,8 @@ object EnsimeConfigFixture {
 
     def renameAndCopy(from: File): File = {
       val to = rename(from)
-      copyDirectory(from, to)
+      if (!to.getName.endsWith(".jar"))
+        copyDirectory(from, to)
       to
     }
 
