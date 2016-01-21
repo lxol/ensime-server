@@ -316,7 +316,8 @@ object EnsimeBuild extends Build {
           "org.scala-refactoring" %% "org.scala-refactoring.library" % "0.8.0",
           "commons-lang" % "commons-lang" % "2.6",
           "commons-io" % "commons-io" % "2.4" % "test,it",
-          "com.googlecode.java-diff-utils" % "diffutils" % "1.3.0"
+          "com.googlecode.java-diff-utils" % "diffutils" % "1.3.0",
+          "org.ensime" % "java7-file-watchers_2.11" % "1.0.0-SNAPSHOT"
         ) ++ logback ++ testLibs(scalaVersion.value, "it,test")
       )
 
