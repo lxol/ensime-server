@@ -141,6 +141,7 @@ object EnsimeBuild extends Build {
       unmanagedJars in Compile += JavaTools,
       EnsimeKeys.unmanagedSourceArchives += file(".").getCanonicalFile / "openjdk-langtools/openjdk6-langtools-src.zip",
       libraryDependencies ++= Seq(
+        "org.ensime" %% "java7-file-watcher" % "1.0.0-SNAPSHOT" intransitive () exclude ("commons-logging", "commons-logging"),
         "com.h2database" % "h2" % "1.4.190",
         "com.typesafe.slick" %% "slick" % "3.1.1",
         "com.zaxxer" % "HikariCP-java6" % "2.3.13",

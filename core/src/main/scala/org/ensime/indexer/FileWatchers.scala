@@ -4,6 +4,7 @@ package org.ensime.indexer
 
 import akka.actor.{ Actor, Props }
 import akka.event.slf4j.SLF4JLogging
+import java.util.UUID
 import org.apache.commons.vfs2._
 import org.apache.commons.vfs2.impl.DefaultFileMonitor
 
@@ -50,7 +51,15 @@ class ClassfileWatcher(
     else config.targetClasspath.map { target =>
       val (selector, dir, rec) =
         if (target.isJar) (JarSelector, target.getParentFile, false) else (ClassfileSelector, target, true)
-      new ApachePollingFileWatcher(dir, selector, rec, listeners)
+      sys.props.get("java.version") match {
+        case Some(v) =>
+          if (v.startsWith("1.6")) {
+            new ApachePollingFileWatcher(dir, selector, rec, listeners)
+          } else {
+            JarWatcher.register(dir, selector, rec, listeners)
+          }
+        case _ => new ApachePollingFileWatcher(dir, selector, rec, listeners)
+      }
     }
 
   override def receive: Receive = {
@@ -76,7 +85,15 @@ class SourceWatcher(
       module <- config.modules.values
       root <- module.sourceRoots
     } yield {
-      new ApachePollingFileWatcher(root, SourceSelector, true, listeners)
+      sys.props.get("java.version") match {
+        case Some(v) =>
+          if (v.startsWith("1.6")) {
+            new ApachePollingFileWatcher(root, SourceSelector, true, listeners)
+          } else {
+            ClassWatcher.register(root, SourceSelector, true, listeners)
+          }
+        case _ => new ApachePollingFileWatcher(root, SourceSelector, true, listeners)
+      }
     }
   override def shutdown(): Unit = impls.foreach(_.shutdown)
 }
@@ -157,5 +174,93 @@ private class ApachePollingFileWatcher(
 
   override def shutdown(): Unit = {
     fm.stop()
+  }
+}
+
+object JarWatcher extends BaseWatcher
+object ClassWatcher extends BaseWatcher
+
+class BaseWatcher extends SLF4JLogging {
+  import org.ensime.filewatcher._
+  val watcher: FileWatcher = new FileWatcher
+  def register(
+    base: File,
+    selector: ExtSelector,
+    recursive: Boolean,
+    listeners: Seq[FileChangeListener]
+  )(implicit vfs: EnsimeVFS) = {
+
+    log.debug("watching {}", base)
+
+    trait EnsimeWatcher extends Watcher {
+      import scala.language.reflectiveCalls
+      val w = watcher.spawnWatcher()
+
+      def create(): Unit = {
+        log.debug(
+          "create EnsimeWatcher {} for {}",
+          w.watcherId.asInstanceOf[Any], base
+        )
+        w.register(
+          base,
+          toWatcherListeners(
+            listeners,
+            selector,
+            recursive,
+            vfs,
+            base,
+            w.watcherId
+          )
+        )
+      }
+      override def shutdown(): Unit = {
+        log.debug("shutdown watcher {}", w.watcherId)
+        w.shutdown()
+      }
+    }
+    val ensimeWatcher = new EnsimeWatcher {}
+    ensimeWatcher.create()
+    ensimeWatcher
+  }
+  def toWatcherListeners(
+    ws: Seq[FileChangeListener],
+    selector: ExtSelector,
+    rec: Boolean,
+    vfs: EnsimeVFS,
+    baseFile: File,
+    uuid: UUID
+  ): scala.collection.immutable.Set[WatcherListener] = {
+    ws.toSet[FileChangeListener] map {
+
+      l: FileChangeListener =>
+        new WatcherListener() {
+          override val base = baseFile
+          override val recursive = rec
+          override val extensions = selector.include
+          override val treatExistingAsNew = !baseFile.isFile
+          override val watcherId = uuid
+
+          override def fileCreated(f: File) = {
+            log.debug("fileAdded {}", f)
+            l.fileAdded(vfs.vfile(f))
+          }
+          override def fileDeleted(f: File) = {
+            log.debug("fileDeleted {}", f)
+            l.fileRemoved(vfs.vfile(f))
+          }
+          override def fileModified(f: File) = {
+            log.debug("fileModified {}", f)
+            l.fileChanged(vfs.vfile(f))
+          }
+          override def baseReCreated(f: File) = {
+            log.debug("baseReCreated {}", f)
+            l.baseReCreated(vfs.vfile(f))
+          }
+          override def baseRemoved(f: File) = {
+            log.debug("baseRemoved {}", f)
+            l.baseRemoved(vfs.vfile(f))
+          }
+        }
+    }
   }
 }

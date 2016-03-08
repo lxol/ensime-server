@@ -363,8 +363,9 @@ abstract class FileWatcherSpec extends EnsimeSpec
 
 class ApacheFileWatcherSpec extends FileWatcherSpec {
   override def createClassWatcher(base: File)(implicit vfs: EnsimeVFS, tk: TestKit): Watcher =
-    new ApachePollingFileWatcher(base, ClassfileSelector, true, listeners)
+    ClassWatcher.register(base, ClassfileSelector, true, listeners)
 
   override def createJarWatcher(jar: File)(implicit vfs: EnsimeVFS, tk: TestKit): Watcher =
-    new ApachePollingFileWatcher(jar.getParentFile, JarSelector, false, listeners)
+    JarWatcher.register(jar.getParentFile, JarSelector, false, listeners)
+
 }
