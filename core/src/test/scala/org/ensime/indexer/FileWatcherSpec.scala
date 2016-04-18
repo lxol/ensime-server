@@ -11,6 +11,7 @@ import org.ensime.util._
 import org.ensime.util.file._
 import org.scalatest._
 import org.scalatest.tagobjects.Retryable
+import scala.util.Properties
 
 sealed trait FileWatcherMessage
 final case class Added(f: FileObject) extends FileWatcherMessage
@@ -153,7 +154,7 @@ abstract class FileWatcherSpec extends EnsimeSpec
       }
     }
 
-  it should "survive deletion of the watched directory" taggedAs (Retryable) in
+  it should "survive deletion of the watched directory" in
     withVFS { implicit vfs =>
       withTestKit { implicit tk =>
         withTempDir { dir =>
@@ -199,6 +200,10 @@ abstract class FileWatcherSpec extends EnsimeSpec
         dir.delete()
         try {
           withClassWatcher(dir) { watcher =>
+            tk.ignoreMsg {
+              case msg: BaseAdded => true
+            }
+
             val foo = (dir / "foo.class")
             val bar = (dir / "b/bar.class")
 
@@ -303,6 +308,9 @@ abstract class FileWatcherSpec extends EnsimeSpec
           val jar = (dir / "jar.jar")
           withJarWatcher(jar) { watcher =>
             waitForLinus()
+            tk.ignoreMsg {
+              case msg: BaseAdded => true
+            }
 
             jar.createWithParents() shouldBe true
 
@@ -363,8 +371,17 @@ abstract class FileWatcherSpec extends EnsimeSpec
 
 class ApacheFileWatcherSpec extends FileWatcherSpec {
   override def createClassWatcher(base: File)(implicit vfs: EnsimeVFS, tk: TestKit): Watcher =
-    new ApachePollingFileWatcher(base, ClassfileSelector, true, listeners)
+    if (Properties.javaVersion.startsWith("1.6"))
+      new ApachePollingFileWatcher(base, ClassfileSelector, true, listeners)
+    else {
+      (new ClassJava7WatcherBuilder()).build(base, listeners)
+    }
 
   override def createJarWatcher(jar: File)(implicit vfs: EnsimeVFS, tk: TestKit): Watcher =
-    new ApachePollingFileWatcher(jar.getParentFile, JarSelector, false, listeners)
+    if (Properties.javaVersion.startsWith("1.6"))
+      new ApachePollingFileWatcher(jar.getParentFile, JarSelector, false, listeners)
+    else {
+      (new JarJava7WatcherBuilder()).build(jar, listeners)
+    }
+
 }
