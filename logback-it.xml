@@ -9,7 +9,7 @@
       <pattern>%d{HH:mm:ss.SSS} %-5level %X{akkaSource} %logger{36} - %msg%n</pattern>
     </encoder>
   </appender>
-  <root level="INFO">
+  <root level="DEBUG">
     <appender-ref ref="file" />
   </root>
   <logger name="org.ensime" level="DEBUG" />

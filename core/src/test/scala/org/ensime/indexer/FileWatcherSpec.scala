@@ -92,6 +92,10 @@ abstract class FileWatcherSpec extends EnsimeSpec
       withTestKit { implicit tk =>
         withTempDir { dir =>
           withClassWatcher(dir) { watcher =>
+            tk.ignoreMsg {
+              case msg: Changed => true // ignore on Windows
+            }
+
             val foo = (dir / "foo.class")
             val bar = (dir / "b/bar.class")
 
@@ -164,6 +168,14 @@ abstract class FileWatcherSpec extends EnsimeSpec
 
             foo.createWithParents() shouldBe true
             bar.createWithParents() shouldBe true
+            //val fishForAdded: Fish = {
+            //case r: Added => true
+            //case r: Changed => false // #ignore on Windows 
+            //}
+
+            //tk.fishForMessage()(fishForAdded)
+            //tk.fishForMessage()(fishForAdded)
+
             tk.expectMsgType[Added]
             tk.expectMsgType[Added]
 
@@ -174,6 +186,7 @@ abstract class FileWatcherSpec extends EnsimeSpec
               case r: BaseRemoved => true
               case a: BaseAdded => true
               case r: Removed => false // foo/bar
+              case r: Changed => false // ignore on Windows
             }
 
             tk.fishForMessage()(createOrDelete)
@@ -244,6 +257,7 @@ abstract class FileWatcherSpec extends EnsimeSpec
               case r: BaseRemoved => true
               case a: BaseAdded => true
               case r: Removed => false
+              case r: Changed => false // ignore on Windows
             }
             tk.fishForMessage()(createOrDelete)
             tk.fishForMessage()(createOrDelete)
@@ -257,6 +271,8 @@ abstract class FileWatcherSpec extends EnsimeSpec
               case a: Added => true
               case c: Changed => true
               case r: Removed => false
+              case r: BaseRemoved => false //ignore on Windows
+              case r: BaseAdded => false // ignore on Windows
             }
             tk.fishForMessage()(nonDeterministicAdd)
             tk.fishForMessage()(nonDeterministicAdd)
@@ -293,6 +309,9 @@ abstract class FileWatcherSpec extends EnsimeSpec
 
           withJarWatcher(jar) { watcher =>
             waitForLinus()
+            tk.ignoreMsg {
+              case msg: Changed => true // ignore on Windows
+            }
 
             jar.delete()
             tk.expectMsgType[Removed]
@@ -328,6 +347,10 @@ abstract class FileWatcherSpec extends EnsimeSpec
           jar.createWithParents() shouldBe true
 
           withJarWatcher(jar) { watcher =>
+            tk.ignoreMsg {
+              case msg: Changed => true // ignore on Windows
+            }
+
             waitForLinus()
 
             jar.delete() // best thing for him, frankly
