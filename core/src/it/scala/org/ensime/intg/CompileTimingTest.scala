@@ -55,7 +55,7 @@ class CompileTimingTest extends EnsimeSpec
           expectMsgType[SymbolDesignations]
 
           // simulate sbt clean https://github.com/sbt/sbt/issues/106
-          FileUtils.deleteDirectory(target)
+          target.tree.reverse.foreach(_.delete())
 
           asyncHelper.receiveN(2) should contain theSameElementsAs (Seq(
             FullTypeCheckCompleteEvent,
