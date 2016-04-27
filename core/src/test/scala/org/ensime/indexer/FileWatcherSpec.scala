@@ -227,7 +227,7 @@ abstract class FileWatcherSpec extends EnsimeSpec
       }
     }
 
-  it should "be able to start up from a non-existent directory" taggedAs (Retryable) in
+  it should "be able to start up from a non-existent directory" in
     withVFS { implicit vfs =>
       withTestKit { implicit tk =>
         import org.ensime.util.RichFileObject._
@@ -237,7 +237,6 @@ abstract class FileWatcherSpec extends EnsimeSpec
             tk.ignoreMsg {
               case msg: BaseAdded => true
             }
-
             val foo = (dir / "foo.class")
             val bar = (dir / "b/bar.class")
 
@@ -247,7 +246,7 @@ abstract class FileWatcherSpec extends EnsimeSpec
               Thread.sleep(1000)
               foo.createWithParents() shouldBe true
             }
-
+            Thread.sleep(1000)
             if (!bar.createWithParents()) {
               Thread.sleep(1000)
               bar.createWithParents() shouldBe true

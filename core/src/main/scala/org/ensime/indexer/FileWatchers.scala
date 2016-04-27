@@ -59,8 +59,13 @@ class ClassfileWatcher(
         val jarJava7WatcherBuilder = new JarJava7WatcherBuilder()
         val classJava7WatcherBuilder = new ClassJava7WatcherBuilder()
         config.targetClasspath.map { target =>
-          log.debug(s"creating a Java 7 jar watcher for ${target}")
-          if (target.isJar) jarJava7WatcherBuilder.build(target, listeners) else classJava7WatcherBuilder.build(target, listeners)
+          if (target.isJar) {
+            log.debug(s"creating a Java 7 jar watcher for ${target}")
+            jarJava7WatcherBuilder.build(target, listeners)
+          } else {
+            log.debug(s"creating a Java 7 class watcher for ${target}")
+            classJava7WatcherBuilder.build(target, listeners)
+          }
         }
       }
       if (Properties.javaVersion.startsWith("1.6")) {
@@ -236,32 +241,32 @@ class JarJava7WatcherBuilder() extends Java7WatcherBuilder {
       override val watcherId = uuid
 
       override def fileCreated(f: File) = {
-        //log.debug("event: fileCreated fileAdded {}", f)
+        log.debug("event: fileCreated fileAdded {}", f)
         l.fileAdded(vfs.vfile(f))
       }
       override def fileDeleted(f: File) = {
-        //log.debug(s"event: fileDeleted None ${f}")
+        log.debug(s"event: fileDeleted None ${f}")
       }
       override def fileModified(f: File) = {
-        //log.debug("event: fileModified fileChanged {}", f)
+        log.debug("event: fileModified fileChanged {}", f)
         l.fileChanged(vfs.vfile(f))
       }
       override def baseRegistered(): Unit = {
-        //log.debug("event: baseRegisted None {}", baseFile)
+        log.debug("event: baseRegisted None {}", baseFile)
         l.baseRegistered()
       }
       override def baseRemoved(): Unit = {
-        //log.debug(s"event: baseRemoved fileRemoved  ${baseFile}")
+        log.debug(s"event: baseRemoved fileRemoved  ${baseFile}")
         l.fileRemoved(vfs.vfile(baseFile))
       }
       override def missingBaseRegistered(): Unit = {
-        //log.debug("event: missingBaseRegistered fileAdded {}", baseFile)
+        log.debug("event: missingBaseRegistered fileAdded {}", baseFile)
         l.fileAdded(vfs.vfile(baseFile))
       }
       override def baseSubdirRegistered(f: File): Unit = {}
 
       override def proxyRegistered(f: File): Unit = {
-        //log.debug("event: proxyRegistered None {}", f)
+        log.debug("event: proxyRegistered None {}", f)
       }
       override def existingFile(f: File): Unit = {
         //log.debug("event: existingFile None {}", f)
@@ -284,39 +289,50 @@ private class SourceJava7WatcherBuilder() extends Java7WatcherBuilder {
       override val recursive = true
       override val extensions = SourceSelector.include
       override val watcherId = uuid
-
+      var notifyExisting = false
       override def fileCreated(f: File) = {
-        //log.debug("event: fileCreated fileAdded {}", f)
+        log.debug("event: fileCreated fileAdded {}", f)
         l.fileAdded(vfs.vfile(f))
       }
       override def fileDeleted(f: File) = {
-        //log.debug(s"event: fileDeleted fileRemoved ${f}")
+        log.debug(s"event: fileDeleted fileRemoved ${f}")
         l.fileRemoved(vfs.vfile(f))
       }
       override def fileModified(f: File) = {
-        //log.debug("event: fileModified fileChanged {}", f)
+        log.debug("event: fileModified fileChanged {}", f)
         l.fileChanged(vfs.vfile(f))
       }
       override def baseRegistered(): Unit = {
-        //log.debug("event: fileRegistered None {}", baseFile)
+        notifyExisting = true
+        log.debug("event: baseRegistered None {}", baseFile)
         l.baseRegistered()
       }
       override def baseRemoved(): Unit = {
-        //log.debug(s"event: baseRemoved baseRemoved ${baseFile}")
+
+        log.debug(s"event: baseRemoved baseRemoved ${baseFile}")
         l.baseRemoved(vfs.vfile(baseFile))
       }
       override def missingBaseRegistered(): Unit = {
-        //log.debug("event: missingBaseRegistered baseReCreated {}", baseFile)
+        log.debug("event: missingBaseRegistered baseReCreated {}", baseFile)
         l.baseReCreated(vfs.vfile(baseFile))
       }
       override def baseSubdirRegistered(f: File): Unit = {}
 
       override def proxyRegistered(f: File): Unit = {
-        //log.debug("event: proxyRegistered None {}", f)
+        notifyExisting = true
+        log.debug("event: proxyRegistered None {}", f)
       }
       override def existingFile(f: File): Unit = {
         //log.debug("event:  existingFile fileAdded{}", f)
-        l.fileAdded(vfs.vfile(f))
+        if (notifyExisting) {
+          log.debug("event:  existingFile fileAdded{}", f)
+          l.fileAdded(vfs.vfile(f))
+        } else {
+          log.debug("event:  do not notify existingFile fileAdded{}", f)
+        }
+
+        // log.debug("event:  existingFile fileAdded{}", f)
+        // if (notifyExisting) l.fileAdded(vfs.vfile(f))
       }
     }
   }
@@ -335,40 +351,50 @@ private class ClassJava7WatcherBuilder() extends Java7WatcherBuilder {
       override val recursive = true
       override val extensions = ClassfileSelector.include
       override val watcherId = uuid
+      var notifyExisting = false;
 
       override def fileCreated(f: File) = {
-        //log.debug("event: fileCreated fileAdded {}", f)
+        log.debug("event: fileCreated fileAdded {}", f)
         l.fileAdded(vfs.vfile(f))
       }
       override def fileDeleted(f: File) = {
-        //log.debug(s"event: fileDeleted fileRemoved ${f}")
+        log.debug(s"event: fileDeleted fileRemoved ${f}")
         l.fileRemoved(vfs.vfile(f))
       }
       override def fileModified(f: File) = {
-        //log.debug("event: fileModified fileChanged {}", f)
+        log.debug("event: fileModified fileChanged {}", f)
         l.fileChanged(vfs.vfile(f))
       }
       override def baseRegistered(): Unit = {
-        //log.debug("event: baseRegistered None {}", baseFile)
+        notifyExisting = true
+        log.debug("event: baseRegistered None {}", baseFile)
         l.baseReCreated(vfs.vfile(baseFile))
         l.baseRegistered()
       }
       override def baseRemoved(): Unit = {
-        //log.debug(s"event: baseRemoved baseRemoved ${baseFile}")
+        log.debug(s"event: baseRemoved baseRemoved ${baseFile}")
+
         l.baseRemoved(vfs.vfile(baseFile))
       }
       override def missingBaseRegistered(): Unit = {
-        //log.debug("event: missingBaseRegistered baseReCreated {}", baseFile)
+        log.debug("event: missingBaseRegistered baseReCreated {}", baseFile)
         l.baseReCreated(vfs.vfile(baseFile))
       }
       override def baseSubdirRegistered(f: File): Unit = {}
 
       override def proxyRegistered(f: File): Unit = {
-        //log.debug("event: proxyRegistered None {}", f)
+        notifyExisting = true
+        log.debug("event: proxyRegistered None {}", f)
       }
       override def existingFile(f: File): Unit = {
         //log.debug("event:  existingFile fileAdded{}", f)
-        l.fileAdded(vfs.vfile(f))
+        if (notifyExisting) {
+          log.debug("event:  class existingFile fileAdded {}", f)
+          l.fileAdded(vfs.vfile(f))
+        } else {
+          log.debug("event:  class do not notify existingFile fileAdded {}", f)
+        }
+
       }
     }
   }

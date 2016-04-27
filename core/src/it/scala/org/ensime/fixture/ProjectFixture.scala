@@ -58,19 +58,12 @@ object ProjectFixture extends Matchers {
         Broadcaster.Persist(AnalyzerReadyEvent),
         Broadcaster.Persist(IndexerReadyEvent)
       )
-    else {
-      type Fish = PartialFunction[Any, Boolean]
-      val fishFor3Messages: Fish = {
-        case Broadcaster.Persist(AnalyzerReadyEvent) => true
-        case Broadcaster.Persist(FullTypeCheckCompleteEvent) => true
-        case Broadcaster.Persist(IndexerReadyEvent) => true
-        case _ => false
-      }
-
-      probe.fishForMessage(2.minutes)(fishFor3Messages)
-      probe.fishForMessage(2.minutes)(fishFor3Messages)
-      probe.fishForMessage(2.minutes)(fishFor3Messages)
-    }
+    else
+      probe.receiveN(3, 2.minutes.dilated) should contain only (
+        Broadcaster.Persist(AnalyzerReadyEvent),
+        Broadcaster.Persist(FullTypeCheckCompleteEvent),
+        Broadcaster.Persist(IndexerReadyEvent)
+      )
     (project, probe)
   }
 }
