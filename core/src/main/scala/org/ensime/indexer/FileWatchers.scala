@@ -368,7 +368,6 @@ private class ClassJava7WatcherBuilder() extends Java7WatcherBuilder {
       override def baseRegistered(): Unit = {
         notifyExisting = true
         log.debug("event: baseRegistered None {}", baseFile)
-        l.baseReCreated(vfs.vfile(baseFile))
         l.baseRegistered()
       }
       override def baseRemoved(): Unit = {
