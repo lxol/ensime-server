@@ -11,6 +11,8 @@ import org.ensime.api._
 import org.ensime.vfs._
 
 import org.ensime.util.file._
+import java.util.UUID
+import scala.util.Properties
 
 trait FileChangeListener {
   def fileAdded(f: FileObject): Unit
@@ -18,6 +20,7 @@ trait FileChangeListener {
   def fileChanged(f: FileObject): Unit
   def baseReCreated(f: FileObject): Unit = {}
   def baseRemoved(f: FileObject): Unit = {}
+  def baseRegistered(): Unit = {}
 }
 
 trait Watcher {
@@ -43,10 +46,38 @@ class ClassfileWatcher(
 
   private val impls =
     if (config.disableClassMonitoring) Nil
-    else config.targetClasspath.map { target =>
-      val (selector, dir, rec) =
-        if (target.isJar) (JarSelector, target.getParentFile, false) else (ClassfileSelector, target, true)
-      new ApachePollingFileWatcher(dir, selector, rec, listeners)
+    else {
+      def buildJava6Watcher() = {
+        config.targetClasspath.map { target =>
+          val (selector, dir, rec) =
+            if (target.isJar)
+              (JarSelector, target.getParentFile, false)
+            else
+              (ClassfileSelector, target, true)
+          if (log.isDebugEnabled())
+            log.debug(s"creating a ApachePollingFileWatcher watcher for $dir")
+          new ApachePollingFileWatcher(dir, selector, rec, listeners).asInstanceOf[Watcher]
+        }
+      }
+      def buildJava7Watcher() = {
+        val jarJava7WatcherBuilder = new JarJava7WatcherBuilder()
+        val classJava7WatcherBuilder = new ClassJava7WatcherBuilder()
+        config.targetClasspath.map { target =>
+          if (target.isJar) {
+            if (log.isDebugEnabled())
+              log.debug(s"creating a Java 7 jar watcher for ${target}")
+            jarJava7WatcherBuilder.build(target, listeners)
+          } else {
+            if (log.isDebugEnabled())
+              log.debug(s"creating a Java 7 class watcher for ${target}")
+            classJava7WatcherBuilder.build(target, listeners)
+          }
+        }
+      }
+      if (Properties.isJava6)
+        buildJava6Watcher()
+      else
+        buildJava7Watcher()
     }
 
   override def receive: Receive = {
@@ -56,7 +87,6 @@ class ClassfileWatcher(
   override def postStop(): Unit = {
     impls.foreach(_.shutdown())
   }
-
 }
 
 class SourceWatcher(
@@ -68,13 +98,36 @@ class SourceWatcher(
 ) extends Watcher with SLF4JLogging {
   private val impls =
     if (config.disableSourceMonitoring) Nil
-    else for {
-      module <- config.modules.values
-      root <- module.sourceRoots
-    } yield {
-      new ApachePollingFileWatcher(root, SourceSelector, true, listeners)
+    else {
+      def buildJava6Watcher() =
+        for {
+          module <- config.modules.values
+          root <- module.sourceRoots
+        } yield {
+          if (log.isDebugEnabled())
+            log.debug(s"creating ApachPollingFileWatcher source watcher for $root")
+          new ApachePollingFileWatcher(root, SourceSelector, true, listeners)
+        }
+
+      def buildJava7Watcher() = {
+        val sourceJava7WatcherBuilder = new SourceJava7WatcherBuilder()
+        for {
+          module <- config.modules.values
+          root <- module.sourceRoots
+        } yield {
+          if (log.isDebugEnabled())
+            log.debug(s"creating a Java 7 source watcher for $root")
+          sourceJava7WatcherBuilder.build(root, listeners)
+        }
+      }
+      if (Properties.isJava6)
+        buildJava6Watcher()
+      else
+        buildJava7Watcher()
     }
+
   override def shutdown(): Unit = impls.foreach(_.shutdown)
+
 }
 
 /**
@@ -153,5 +206,162 @@ private class ApachePollingFileWatcher(
 
   override def shutdown(): Unit = {
     fm.stop()
+  }
+}
+
+trait Java7WatcherBuilder extends SLF4JLogging {
+  import org.ensime.filewatcher.WatcherListener
+  val serviceBuilder = new Java7WatchServiceBuilder()
+  def build(
+    watched: File,
+    listeners: Seq[FileChangeListener]
+  )(
+    implicit
+    vfs: EnsimeVFS
+  ): Watcher = {
+    val watcherId = UUID.randomUUID()
+    serviceBuilder.build(watcherId, watched,
+      listeners.map { l => toWatcherListener(l, watched, watcherId, vfs) })
+  }
+  def toWatcherListener(
+    l: FileChangeListener,
+    baseFile: File,
+    uuid: UUID,
+    vfs: EnsimeVFS
+  ): WatcherListener
+}
+
+class JarJava7WatcherBuilder() extends Java7WatcherBuilder {
+  import org.ensime.filewatcher.WatcherListener
+  override def toWatcherListener(
+    l: FileChangeListener,
+    baseFile: File,
+    uuid: UUID,
+    vfs: EnsimeVFS
+  ) = {
+    new WatcherListener() {
+      override val base = baseFile
+      override val recursive = false
+      override val extensions = JarSelector.include
+      override val watcherId = uuid
+      override def fileCreated(f: File) =
+        l.fileAdded(vfs.vfile(f))
+      override def fileDeleted(f: File) = {}
+      override def fileModified(f: File) =
+        l.fileChanged(vfs.vfile(f))
+      override def baseRegistered(): Unit =
+        l.baseRegistered()
+      override def baseRemoved(): Unit =
+        l.fileRemoved(vfs.vfile(baseFile))
+      override def missingBaseRegistered(): Unit =
+        l.fileAdded(vfs.vfile(baseFile))
+      override def baseSubdirRegistered(f: File): Unit = {}
+      override def proxyRegistered(f: File): Unit = {}
+      override def existingFile(f: File): Unit = {}
+    }
+  }
+
+}
+
+private class SourceJava7WatcherBuilder() extends Java7WatcherBuilder {
+  import org.ensime.filewatcher.WatcherListener
+  override def toWatcherListener(
+    l: FileChangeListener,
+    baseFile: File,
+    uuid: UUID,
+    vfs: EnsimeVFS
+  ) = {
+    new WatcherListener() {
+      override val base = baseFile
+      override val recursive = true
+      override val extensions = SourceSelector.include
+      override val watcherId = uuid
+      @volatile private var notifyExisting = false
+      override def fileCreated(f: File) =
+        l.fileAdded(vfs.vfile(f))
+      override def fileDeleted(f: File) =
+        l.fileRemoved(vfs.vfile(f))
+      override def fileModified(f: File) =
+        l.fileChanged(vfs.vfile(f))
+      override def baseRegistered(): Unit = {
+        notifyExisting = true
+        l.baseRegistered()
+      }
+      override def baseRemoved(): Unit =
+        l.baseRemoved(vfs.vfile(baseFile))
+      override def missingBaseRegistered(): Unit =
+        l.baseReCreated(vfs.vfile(baseFile))
+      override def baseSubdirRegistered(f: File): Unit = {}
+      override def proxyRegistered(f: File): Unit =
+        notifyExisting = true
+      override def existingFile(f: File): Unit =
+        if (notifyExisting)
+          l.fileAdded(vfs.vfile(f))
+    }
+  }
+}
+
+private class ClassJava7WatcherBuilder() extends Java7WatcherBuilder {
+  import org.ensime.filewatcher.WatcherListener
+  override def toWatcherListener(
+    l: FileChangeListener,
+    baseFile: File,
+    uuid: UUID,
+    vfs: EnsimeVFS
+  ) = {
+    new WatcherListener() {
+      override val base = baseFile
+      override val recursive = true
+      override val extensions = ClassfileSelector.include
+      override val watcherId = uuid
+      @volatile private var notifyExisting = false;
+
+      override def fileCreated(f: File) =
+        l.fileAdded(vfs.vfile(f))
+      override def fileDeleted(f: File) =
+        l.fileRemoved(vfs.vfile(f))
+      override def fileModified(f: File) =
+        l.fileChanged(vfs.vfile(f))
+      override def baseRegistered(): Unit = {
+        notifyExisting = true
+        l.baseRegistered()
+      }
+      override def baseRemoved(): Unit =
+        l.baseRemoved(vfs.vfile(baseFile))
+      override def missingBaseRegistered(): Unit =
+        l.baseReCreated(vfs.vfile(baseFile))
+      override def baseSubdirRegistered(f: File): Unit = {}
+      override def proxyRegistered(f: File): Unit =
+        notifyExisting = true
+      override def existingFile(f: File): Unit =
+        if (notifyExisting)
+          l.fileAdded(vfs.vfile(f))
+    }
+  }
+}
+
+class Java7WatchServiceBuilder extends SLF4JLogging {
+  import org.ensime.filewatcher.FileWatchService
+  import org.ensime.filewatcher.WatcherListener
+
+  val fileWatchService: FileWatchService = new FileWatchService
+  def build(
+    watcherId: UUID,
+    base: File,
+    listeners: Seq[WatcherListener]
+  )(implicit vfs: EnsimeVFS) = {
+    if (log.isDebugEnabled())
+      log.debug("watching {}", base)
+
+    trait EnsimeWatcher extends Watcher {
+      val w = fileWatchService.spawnWatcher(watcherId, base, listeners.toSet)
+      override def shutdown(): Unit = {
+        if (log.isDebugEnabled())
+          log.debug("shutdown watcher {}", w.watcherId)
+        w.shutdown()
+      }
+    }
+    val ensimeWatcher = new EnsimeWatcher {}
+    ensimeWatcher
   }
 }
